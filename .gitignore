@@ -1,0 +1,12 @@
+# large files
+*.fastq.gz
+picard.jar
+## *.csv
+
+# editor / OS junk
+.DS_Store
+__pycache__/
+*.pyc
+
+# virtual envs (if any later)
+.venv/

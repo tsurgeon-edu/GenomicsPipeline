@@ -1,8 +1,9 @@
 import os
 import glob
-from utils.log_command import log_command
+import helpers
+from log_command import log_command
 from paths import GetPaths
-from utils import helpers
+from pathlib import Path
 
 
 class GatkPreProcessing(object):
@@ -19,6 +20,7 @@ class GatkPreProcessing(object):
         self.bundle_dir = self.get_paths.ref_dir
         # self.bundle_dir = self.get_paths.ref_dir + "hg19_bundle"
         self.file_list = []
+        os.makedirs(self.working_directory, exist_ok=True)
         os.chdir(self.working_directory)
 
     def gatk3_realign_target_creator(self, lastbam):
@@ -69,22 +71,45 @@ class GatkPreProcessing(object):
 
 
     def gatk4_base_recalibrator(self, lastbam):
-        recal_table = str(lastbam).split(".")[0] + "_RECAL.table"
+        gatk4_dir = os.path.join(self.working_directory, "GATK4")
+        os.makedirs(gatk4_dir, exist_ok=True)
 
-        bcal = self.get_paths.gatk4_path + " BaseRecalibrator -R " + self.bundle_dir +\
-               "Homo_sapiens_assembly38.fasta -I " + lastbam + " --known-sites " + self.get_paths.mills_indel +\
-               " --known-sites " + self.get_paths.dbsnp + " --known-sites " + self.get_paths.one_thousand_g + " -O " +\
+        lastbam_name = os.path.basename(lastbam)
+        stem = os.path.splitext(lastbam_name)[0]
+        recal_table = os.path.join(gatk4_dir, f"{stem}_RECAL.table")
+
+        ref_fa = os.path.join(self.bundle_dir, "Homo_sapiens_assembly38.fasta")
+        bcal = self.get_paths.gatk4_path + " BaseRecalibrator -R " + ref_fa + \
+               " -I " + lastbam + " --known-sites " + self.get_paths.mills_indel + \
+               " --known-sites " + self.get_paths.dbsnp + " --known-sites " + self.get_paths.one_thousand_g + " -O " + \
                recal_table
         log_command(bcal, "Base Recalibrator", self.threads, "Gatk4PreProcessing")
         self.file_list.append(recal_table)
         return recal_table
 
     def gatk4_applybsqr(self, lastbam, recaltable):
-        afterbqsrbam = "GATK4_" + lastbam
-        apply_command = self.get_paths.gatk4_path + " ApplyBQSR -R " + self.bundle_dir + "Homo_sapiens_assembly38.fasta -I " + \
-                        lastbam + " --bqsr-recal-file " + recaltable + " -O " + afterbqsrbam
+        # Make sure output folder exists
+        gatk4_dir = os.path.join(self.working_directory, "GATK4")
+        os.makedirs(gatk4_dir, exist_ok=True)
+
+        # Use ONLY the filename, never the full path
+        lastbam_name = os.path.basename(lastbam)                 # e.g. MDUP_Bwa_HCC1395_MergedBAM.bam
+        stem = os.path.splitext(lastbam_name)[0]                 # e.g. MDUP_Bwa_HCC1395_MergedBAM
+
+        afterbqsrbam = os.path.join(gatk4_dir, f"{stem}.BQSR.bam")
+
+        ref_fa = os.path.join(self.bundle_dir, "Homo_sapiens_assembly38.fasta")
+        apply_command = (
+            self.get_paths.gatk4_path
+            + " ApplyBQSR -R " + ref_fa
+            + " -I " + lastbam
+            + " --bqsr-recal-file " + recaltable
+            + " -O " + afterbqsrbam
+        )
+
         log_command(apply_command, "ApplyBQSR", self.threads, "Gatk4PreProcessing")
         self.file_list.append(afterbqsrbam)
+
         indexed = helpers.create_index(afterbqsrbam, "Create Index by GATK_ApplyBSQR", self.threads, "GatkPreProcess")
         self.file_list.append(indexed)
 
@@ -94,13 +119,13 @@ class GatkPreProcessing(object):
         realigned_bam = self.gatk3_indel_realigner(after_markdpl, realign_target)
         basequality = self.gatk3_base_recalibrator(realigned_bam)
         self.gatk3_print_reads(realigned_bam, basequality)
-        gatk_files = glob.glob("GATK_*.bam")
+        gatk_files = glob.glob("GATK_PR*.bam")
         return gatk_files
 
     def run_gatks4(self, after_markdpl):
         basequality = self.gatk4_base_recalibrator(after_markdpl)
         self.gatk4_applybsqr(after_markdpl, basequality)
-        gatk_files = glob.glob("GATK4_*bam")
+        gatk_files = glob.glob(os.path.join("GATK4", "*.BQSR.bam"))
         return gatk_files
 
 

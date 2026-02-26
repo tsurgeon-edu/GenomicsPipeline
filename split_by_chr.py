@@ -1,5 +1,5 @@
 import glob
-from utils.log_command import log_command
+from log_command import log_command
 
 
 def split_bam_by_chr(file):

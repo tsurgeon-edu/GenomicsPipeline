@@ -1,10 +1,10 @@
-import os, glob, shutil
+import glob
+import os
+import shutil
 from gatk_pre_processing import GatkPreProcessing
 from run_pipeline_mapping import callmapping
 from run_pipeline_variant_calling import call_variant_caller
 from variant_annotation import VariantAnnotation
-
-
 
 
 #folder_list = [("/media/bioinformaticslab/369ca485-b3f2-4f04-bbfb-8657aad7669e/bioinformaticslab/Desktop/AMBRY/203/Sample_NB09", "Tumor", "Novoalign", "1")]

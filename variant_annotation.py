@@ -1,9 +1,9 @@
-import os
 import glob
-from utils.log_command import log_command
-from paths import GetPaths
-from utils import helpers
+import helpers
+import os
 import pandas as pd
+from log_command import log_command
+from paths import GetPaths
 
 
 class VariantAnnotation(object):
@@ -17,12 +17,12 @@ class VariantAnnotation(object):
         self.v_annotater = variant_annotater
         self.threads = str(thread_v)
         if annotate_all:
-            self.annotate_files = glob.glob("*.vcf")
+            self.annotate_files = glob.glob("*.vcf") + glob.glob("*.vcf.gz")
         else:
             self.annotate_files = will_annotate
         self.humandb = self.get_paths.annovar_db
-        self.xref = self.get_paths.annovar + "example/gene_fullxref.txt"
-        self.annovar_dir = self.get_paths.annovar + "table_annovar.pl"
+        self.xref = os.path.join(self.get_paths.annovar, "example", "gene_fullxref.txt")
+        self.annovar_dir = os.path.join(self.get_paths.annovar, "table_annovar.pl")
         self.file_list = []
 
     def run_annotation(self):
@@ -45,7 +45,7 @@ class VariantAnnotation(object):
                           " -buildver hg38 -out " + output_file + " -remove -protocol refGene,ensGene,knownGene," \
                                                                  "cytoBand" \
                                                                   ",exac03,avsnp150,dbnsfp35a,gme,gnomad_exome," \
-                                                                  "clinvar_20190305,cosmic89_coding,nci60,intervar_20180118 -operation " \
+                                                                  "clinvar_20190305,cosmic,nci60,intervar_20180118 -operation " \
                                                                   "gx,gx,gx,r,f,f,f,f,f,f,f,f,f -nastring . -polish " \
                                                                   "-xreffile " + self.xref
                 print(command)

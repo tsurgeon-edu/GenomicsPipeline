@@ -1,0 +1,113 @@
+## Step 1: Collect the genomics data for the GenomicsPipeline
+
+### 1.0 Create a working directory for downloaded SRA files
+
+❯ mkdir -p ~/SRA_cache
+❯ mkdir -p ~/SRA_cache/{sra,fastq}
+❯ cd ~/SRA_cache
+
+### 1.1 Download the SRA accession files (wait for each download)
+
+❯ prefetch --max-size 80GB -O sra SRR7890824
+❯ prefetch --max-size 80GB -O sra SRR7890827
+
+### 1.2 Convert .SRA files to FASTQ and split paired reads (with downsampling to 1M reads)
+
+❯ fastq-dump sra/SRR7890824 \
+  --split-files \
+  -X 1000000 \
+  -O fastq
+
+❯ fastq-dump sra/SRR7890827 \
+  --split-files \
+  -X 1000000 \
+  -O fastq
+
+### 1.3 Compress FASTQ files using gzip (wait for gzip to finish)
+
+❯ gzip fastq/*.fastq
+
+### 1.4 Rename FASTQ files to common naming convention.
+
+❯ mv fastq/SRR7890824_1.fastq.gz fastq/HCC1395_Tumor_R1.fastq.gz
+mv fastq/SRR7890824_2.fastq.gz fastq/HCC1395_Tumor_R2.fastq.gz
+mv fastq/SRR7890827_1.fastq.gz fastq/HCC1395_Germline_R1.fastq.gz
+mv fastq/SRR7890827_2.fastq.gz fastq/HCC1395_Germline_R2.fastq.gz
+
+## Step 2: Setup GenomicsPipeline working enviornment
+
+### 2.1 Bring FASTQ files into the pipeline
+
+❯ cd ~/Documents/GiHub/tsurgeonc/ASL_GenomicsPipeline
+❯ mkdir -p input_fastq
+❯ cp ~/SRA_cache/fastq/*.fastq.gz input_fastq/  # can use symlinks or mv to save memory
+
+### 2.2 Perform a git commit to add .gitignore (but keep input data files locally)
+
+❯ git status
+❯ git add .
+❯ git commit -m "Added .gitignore for large fasta.gz files. Imported downsampled HCC1395 tumor-normal WGS data for GenomicsPipeline test run stored locally."
+
+### 2.3 Rename FASTQ to expected names to work properly with GenomicsPipeline repo
+
+❯ mv input_fastq/HCC1395_Tumor_R1.fastq.gz HCC1395_S1_L001_R1_001.fastq.gz
+mv input_fastq/HCC1395_Tumor_R2.fastq.gz HCC1395_S1_L001_R2_001.fastq.gz
+mv input_fastq/HCC1395_Germline_R1.fastq.gz HCC1395_Germline_S1_L001_R1_001.fastq.gz
+mv input_fastq/HCC1395_Germline_R2.fastq.gz HCC1395_Germline_S1_L001_R2_001.fastq.gz
+rmdir input_fastq
+
+### 2.4 Perform another git commit to correct .gitignore (and renamed fastq files)
+
+❯ git status
+❯ git add .
+❯ git commit -m "Updated .gitignore to match location of fastq.gz files. Moved fastq files."
+
+### 2.5 Check prequisites and dependencies before running pipeline (my setup)
+
+#### a. Python libraries
+
+#### b. Picard release version 3.4.0 (note: download picard.jar and setup to work locally in terminal)
+
+❯ brew install openjdk
+❯ java -version  # openjdk version "25.0.2" 2026-01-20
+❯ sudo mkdir -p /usr/local/share/picard
+❯ sudo mv ~/Downloads/picard.jar /usr/local/share/picard
+❯ sudo nano /usr/local/bin/picard  # add text to tell terminal where to find picard
+#!/usr/bin/env zsh
+java -jar /usr/local/share/picard/picard.jar "$@"
+❯ sudo chmod +x /usr/local/bin/picard  # make executable
+
+#### c. GATK release version 4.6.2.0 (note: download gatk-4.6.2.0.zip and setup to work locally in terminal)
+
+❯ sudo mkdir -p /usr/local/share/gatk
+❯ sudo mv ~/Downloads/gatk-4.6.2.0 /usr/local/share/gatk/
+❯ sudo nano /usr/local/bin/gatk  # add text to tell terminal where to find gatk
+#!/usr/bin/env zsh
+java -jar /usr/local/share/gatk/gatk-4.6.2.0/gatk-package-4.6.2.0-local.jar "$@"
+❯ sudo chmod +x /usr/local/bin/gatk  # make executable
+
+#### d. VarScan release version 2.3.9 (note: download VarScan.v2.3.9.jar and setup to work locally in terminal)
+
+❯ sudo mkdir -p /usr/local/share/varscan
+❯ sudo mv ~/Downloads/VarScan.v2.3.9.jar /usr/local/share/varscan
+❯ sudo nano /usr/local/bin/varscan  # add text to tell terminal where to find varscan
+#!/usr/bin/env zsh
+java -jar /usr/local/share/varscan/VarScan.v2.3.9.jar "$@"
+❯ sudo chmod +x /usr/local/bin/varscan  # make executable
+
+#### e. Samtools release version 1.23
+
+❯ brew install samtools
+
+#### f. Annovar - registration required (note: download annovar.latest.tar.gz and setup to work locally in terminal)
+
+❯ 
+
+### 2.6 Perform another git commit to update .gitignore and add setup-steps (this file) to repo
+
+❯ git status
+❯ git add .
+❯ git commit -m "Updated .gitignore. Added ANNOVAR pdf and my setup steps TXT file."
+
+
+

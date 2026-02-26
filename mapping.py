@@ -1,11 +1,10 @@
-import os
-from utils.log_command import log_command
-from paths import GetPaths
-from utils import helpers
 import glob
-import re
 import gzip
-
+import helpers
+import os
+import re
+from log_command import log_command
+from paths import GetPaths
 
 class Mapping(object):
 
@@ -88,6 +87,31 @@ class Mapping(object):
         self.delete_file_list = []
         os.chdir(self.working_directory)
 
+    @staticmethod
+    def read_first_fastq_header(path: str) -> str:
+        # Works for .fastq and .fastq.gz
+        if path.endswith(".gz"):
+            with gzip.open(path, "rt") as f:
+                return f.readline().strip()
+        with open(path, "r") as f:
+            return f.readline().strip()
+
+    @staticmethod
+    def parse_flowcell_token(header: str) -> str:
+        """
+        Returns a stable token for read group fields.
+        - Illumina header example: @INST:RUN:FLOWCELL:LANE:...
+          -> returns FLOWCELL
+        - SRA/other header example: @SRR7890827.1 1 length=150
+          -> returns SRR7890827.1
+        """
+        h = header[1:] if header.startswith("@") else header
+        first_field = h.split()[0]               # up to first whitespace
+        parts = first_field.split(":")
+        if len(parts) >= 3:
+            return parts[2]                      # Illumina FLOWCELL
+        return first_field                       # fallback (e.g. SRR7890827.1)
+
     def mapping(self):
 
         """
@@ -109,11 +133,11 @@ class Mapping(object):
         RG_SM = info_dict["Sample_ID"][0]
         RG_PL = "Illumina"
         RG_LB = self.library_matching_id
+
         # Each fastq file has flow cell information so just read one fastq file first line
-        first_fastq_file_dir = self.working_directory + "/" + fastq_list[0] + ".fastq.gz"
-        with gzip.open(first_fastq_file_dir) as f:
-            first_line = f.readline()
-        flowcell_info = str(first_line).split(":")[2]
+        first_fastq_file_path = os.path.join(self.working_directory, fastq_list[0] + ".fastq.gz")
+        first_line = self.read_first_fastq_header(first_fastq_file_path)
+        flowcell_info = self.parse_flowcell_token(first_line)
 
         # Fastq files grouped by lane if there are more than one lane and grouped by how many sequence read there are.
         # i.e. SampleName_S1_L001_R1_001.fastq.gz , SampleName_S1_L002_R1_001.fastq.gz ,
@@ -135,6 +159,34 @@ class Mapping(object):
                 RG_PU = flowcell_info + "." + info_dict["Index"][0] + "." + i[-1]
                 map_bam = ""
 
+                # Reference paths
+                ref_dir = self.get_paths.ref_dir
+
+                bwa_ref_fa = os.path.join(ref_dir, "Bwa", "Homo_sapiens_assembly38.fasta")
+                bowtie2_index_prefix = os.path.join(ref_dir, "Bowtie2", "Homo_sapiens_assembly38")
+                novoalign_index_prefix = os.path.join(ref_dir, "NovoAlign", "Homo_sapiens_assembly38")
+
+                if self.map_type == "Bwa":
+                    if not os.path.exists(bwa_ref_fa):
+                        raise RuntimeError(f"BWA reference fasta not found: {bwa_ref_fa}")
+
+                    required = [bwa_ref_fa + ext for ext in [".amb", ".ann", ".bwt", ".pac", ".sa"]]
+                    missing = [p for p in required if not os.path.exists(p)]
+                    if missing:
+                        raise RuntimeError(
+                            "BWA index files missing. Run:\n"
+                            f"  bwa index {bwa_ref_fa}\n"
+                            "Missing:\n  " + "\n  ".join(missing)
+                        )
+
+                if self.map_type == "Bowtie2":
+                    if not (os.path.exists(bowtie2_index_prefix + ".1.bt2") or
+                            os.path.exists(bowtie2_index_prefix + ".1.bt2l")):
+                        raise RuntimeError(f"Bowtie2 index not found: {bowtie2_index_prefix}")
+
+                if self.map_type == "Novoalign" and not os.path.exists(novoalign_index_prefix):
+                    raise RuntimeError(f"Novoalign index/db not found: {novoalign_index_prefix}")
+
                 # Create output name of bam file after mapping
                 gene_origin = self.map_type + "_" + info_dict["Sample_ID"][0] + "_" + info_dict["Index"][
                     0] + "_" + i + "_" + k + ".bam"
@@ -143,27 +195,27 @@ class Mapping(object):
                     add_read_group = ' -R "@RG\\tID:' + RG_ID + '\\tSM:' + RG_SM + '\\tLB:' + RG_LB + '\\tPL:' + \
                                      RG_PL + '\\tPU:' + RG_PU + '" '  # Read group created and will bed added bam file
 
-                    map_bam = "bwa mem -t " + self.threads + " " + add_read_group + self.get_paths.ref_dir + \
-                              "Bwa/Homo_sapiens_assembly38.fasta " + read1[0] + " " + read2[0] + \
-                              " | samtools view -@" + self.threads + " -bS - > " + gene_origin
+                    map_bam = ("bwa mem -t " + self.threads + " " + add_read_group + bwa_ref_fa + " " + \
+                        read1[0] + " " + read2[0] + " | samtools view -@ " + self.threads + " -bS - > " + gene_origin)
                     print("mapping =>" + map_bam)
+
                 elif self.map_type == "Bowtie2":  # If selected algorithm is Bowtie2
 
                     add_read_group = " --rg-id " + RG_ID + " --rg SM:" + RG_SM + " --rg LB:" + RG_LB + " --rg PL:" + \
                                      RG_PL + " --rg PU:" + RG_PU  # Read group created and will bed added bam file
 
-                    map_bam = "bowtie2 -p" + self.threads + add_read_group + " -x " + self.get_paths.ref_dir + \
-                              "Bowtie2/Homo_sapiens_assembly38 -1 " + read1[0] + " -2 " + read2[0] + \
-                              " | samtools view -@" + self.threads + " -bS - > " + gene_origin
+                    map_bam = ("bowtie2 -p " + self.threads + add_read_group + " -x " + bowtie2_index_prefix + \
+                        " -1 " + read1[0] + " -2 " + read2[0] + " | samtools view -@ " + self.threads + \
+                        " -bS - > " + gene_origin)
                     print("mapping =>" + map_bam)
 
                 elif self.map_type == "Novoalign":
                     add_read_group = ' "@RG\\tID:' + RG_ID + '\\tSM:' + RG_SM + '\\tLB:' + RG_LB + '\\tPL:' + \
                                      RG_PL + '\\tPU:' + RG_PU + '" '  # Read group created and will bed added bam file
                     stats_txt = gene_origin.split(".")[0] + "_stats.txt "
-                    map_bam = self.get_paths.novoalign + "novoalign -k -d " + self.get_paths.ref_dir + "NovoAlign/Homo_sapiens_assembly38 -f " + \
-                              read1[0] + " " +read2[0] + " -a -c " + self.threads + " -o SAM " + add_read_group + " 2> " + stats_txt + \
-                              " | samtools view -@" + self.threads + " -bS - > " + gene_origin
+                    map_bam = (self.get_paths.novoalign + "novoalign -k -d " + novoalign_index_prefix + " " + \
+                        "-f " + read1[0] + " " + read2[0] + " -a -c " + self.threads + " -o SAM " + add_read_group + \
+                        " 2> " + stats_txt + " | samtools view -@ " + self.threads + " -bS - > " + gene_origin)
                     print("mapping =>" + map_bam)
                     
                 else:

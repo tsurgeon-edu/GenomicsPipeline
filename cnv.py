@@ -1,4 +1,6 @@
-import os, glob
+import glob
+import os
+
 
 os.chdir("/home/selcuk/Downloads/cnvkit-master")
 

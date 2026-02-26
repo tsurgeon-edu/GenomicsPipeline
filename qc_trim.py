@@ -1,9 +1,9 @@
-import re
-import os
 import glob
-from utils.log_command import log_command
+import helpers
+import os
+import re
+from log_command import log_command
 from paths import GetPaths
-from utils import helpers
 
 
 class QC(object):
@@ -17,6 +17,14 @@ class QC(object):
         self.fastq_list = fastq_list
         self.file_list = []
         self.paths = GetPaths()
+
+        # ---- Validate required tools exist ----
+        if not self.paths.fastqc:
+            raise RuntimeError("fastqc not found on PATH")
+
+        if not self.paths.fastp:
+            raise RuntimeError("fastp not found on PATH")
+
         os.chdir(self.working_directory)
 
     def fastqc(self):
@@ -52,8 +60,8 @@ class QC(object):
                     self.file_list.append("trim_" + str(read2[0]))
                     print("---------------------------------------------------")
                     print(self.file_list)
-        except:
-            pass
+        except Exception as e:
+            raise RuntimeError(f"qc_trim failed: {e}") from e
 
     def run_qc(self):
         self.fastqc()
